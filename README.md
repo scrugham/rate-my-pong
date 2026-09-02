@@ -68,5 +68,4 @@ Have people use **Add Player**, then log matches.
 ## Notes
 
 - Search engines are blocked (`robots.txt`, meta robots, `X-Robots-Tag`)
-- No company name in the UI — Mission colors only
 - Set `DATABASE_URL` locally in `.env.local` if you want to test against Neon before deploy
