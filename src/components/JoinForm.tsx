@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 
 export function JoinForm() {
@@ -9,11 +9,27 @@ export function JoinForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [writeAllowed, setWriteAllowed] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    fetch("/api/write-access")
+      .then((r) => r.json())
+      .then((d) => setWriteAllowed(Boolean(d.allowed)))
+      .catch(() => setWriteAllowed(false));
+  }, []);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     setSuccess(null);
+
+    if (writeAllowed === false) {
+      setError(
+        "Looks like you’re outside the allowed network. Switch to office Wi‑Fi (or open this at the office) to add a player."
+      );
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await fetch("/api/players", {
@@ -46,6 +62,7 @@ export function JoinForm() {
           placeholder="Miso Homie"
           required
           maxLength={32}
+          disabled={writeAllowed === false}
         />
       </label>
 
@@ -58,6 +75,7 @@ export function JoinForm() {
           placeholder="Clayton"
           required
           maxLength={64}
+          disabled={writeAllowed === false}
         />
       </label>
 
@@ -69,6 +87,17 @@ export function JoinForm() {
             (realName.trim() || "Real Name")}
         </p>
       </div>
+
+      {writeAllowed === false && (
+        <p
+          className="rounded-lg border border-[rgba(242,169,0,0.35)] bg-[rgba(242,169,0,0.08)] px-3 py-2 text-sm text-[var(--foreground)]"
+          role="status"
+          aria-live="polite"
+        >
+          Looks like you’re outside the allowed network. Switch to office
+          Wi‑Fi (or open this at the office) to add a player.
+        </p>
+      )}
 
       {error && (
         <p className="rounded-lg border border-[rgba(177,35,115,0.35)] bg-[rgba(177,35,115,0.08)] px-3 py-2 text-sm text-[var(--danger)]">
@@ -85,7 +114,11 @@ export function JoinForm() {
       )}
 
       <div className="pt-3">
-        <button type="submit" className="btn-primary w-full" disabled={loading}>
+        <button
+          type="submit"
+          className="btn-primary w-full"
+          disabled={loading || writeAllowed === false}
+        >
           {loading ? "Joining..." : "Join"}
         </button>
       </div>

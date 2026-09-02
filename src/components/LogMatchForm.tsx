@@ -25,6 +25,7 @@ export function LogMatchForm() {
   const [games, setGames] = useState<SeriesGameDraft[]>([newGameDraft()]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [writeAllowed, setWriteAllowed] = useState<boolean | null>(null);
   const router = useRouter();
 
   async function loadPlayers() {
@@ -35,6 +36,13 @@ export function LogMatchForm() {
 
   useEffect(() => {
     loadPlayers().catch(() => setError("Could not load roster."));
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/write-access")
+      .then((r) => r.json())
+      .then((d) => setWriteAllowed(Boolean(d.allowed)))
+      .catch(() => setWriteAllowed(false));
   }, []);
 
   useEffect(() => {
@@ -87,6 +95,14 @@ export function LogMatchForm() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+
+    if (writeAllowed === false) {
+      setError(
+        "Looks like you’re outside the allowed network. Switch to office Wi‑Fi (or open this at the office) to log a match."
+      );
+      return;
+    }
+
     setLoading(true);
 
     const sideA = format === "singles" ? [a1] : [a1, a2];
@@ -287,6 +303,17 @@ export function LogMatchForm() {
         </p>
       )}
 
+      {writeAllowed === false && (
+        <p
+          className="rounded-lg border border-[rgba(242,169,0,0.35)] bg-[rgba(242,169,0,0.08)] px-3 py-2 text-sm text-[var(--foreground)]"
+          role="status"
+          aria-live="polite"
+        >
+          Looks like you’re outside the allowed network. Switch to office
+          Wi‑Fi (or open this at the office) to log a match.
+        </p>
+      )}
+
       {error && (
         <p className="rounded-lg border border-[rgba(177,35,115,0.35)] bg-[rgba(177,35,115,0.08)] px-3 py-2 text-sm text-[var(--danger)]">
           {error}
@@ -297,7 +324,7 @@ export function LogMatchForm() {
         <button
           type="submit"
           className="btn-primary w-full sm:w-auto"
-          disabled={loading || !rosterReady}
+          disabled={loading || !rosterReady || writeAllowed === false}
         >
           {submitLabel}
         </button>

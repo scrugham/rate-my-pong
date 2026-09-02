@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 import { listPlayers, createPlayer } from "@/lib/store";
+import {
+  evaluateWriteAccess,
+  writeDeniedResponse,
+  WRITE_DENIED_MESSAGE_JOIN,
+} from "@/lib/write-access";
 
 export const runtime = "nodejs";
 
@@ -9,6 +14,11 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const access = evaluateWriteAccess(request);
+  if (!access.allowed) {
+    return writeDeniedResponse(WRITE_DENIED_MESSAGE_JOIN);
+  }
+
   try {
     const body = await request.json();
     const player = await createPlayer({
