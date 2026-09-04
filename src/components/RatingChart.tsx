@@ -26,7 +26,8 @@ const PALETTE = [
 ];
 
 const MIN_WINDOW = 4;
-const LABEL_GAP = 13;
+/** Vertical space reserved per end-label (pill height + padding). */
+const LABEL_SLOT = 22;
 const MONO =
   'ui-monospace, "Cascadia Mono", Consolas, "SF Mono", monospace';
 
@@ -35,32 +36,57 @@ function colorFor(playerId: string, orderedIds: string[]): string {
   return PALETTE[(i < 0 ? 0 : i) % PALETTE.length];
 }
 
-/** Stack end-label Y positions so nearby series don't overlap. */
-function dodgeLabelYs(
+function shortLabelName(nickname: string, max = 14): string {
+  const t = nickname.trim();
+  if (t.length <= max) return t;
+  return `${t.slice(0, max - 1)}…`;
+}
+
+/**
+ * Always place labels on an evenly spaced right rail (Elo order).
+ * Natural Y is only used for leader-line anchors — never for text position —
+ * so mid-pack names cannot cover each other.
+ */
+function placeLabelYs(
   items: { y: number }[],
-  minGap: number,
+  slot: number,
   top: number,
   bottom: number
 ): number[] {
+  const n = items.length;
+  if (n === 0) return [];
+
   const order = items
     .map((item, index) => ({ ...item, index }))
-    .sort((a, b) => a.y - b.y);
-  const ys = order.map((o) => o.y);
-  for (let i = 1; i < ys.length; i++) {
-    if (ys[i] - ys[i - 1] < minGap) ys[i] = ys[i - 1] + minGap;
+    .sort((a, b) => a.y - b.y || a.index - b.index);
+
+  const avail = Math.max(slot, bottom - top);
+  const out = new Array<number>(n);
+
+  if (n === 1) {
+    out[order[0].index] = Math.min(bottom, Math.max(top, order[0].y));
+    return out;
   }
-  if (ys.length && ys[ys.length - 1] > bottom) {
-    let overflow = ys[ys.length - 1] - bottom;
-    for (let i = ys.length - 1; i >= 0 && overflow > 0; i--) {
-      const floor = i === 0 ? top : ys[i - 1] + minGap;
-      const pull = Math.min(overflow, Math.max(0, ys[i] - floor));
-      ys[i] -= pull;
-      overflow -= pull;
-    }
+
+  // Prefer natural spacing when everyone is already far apart
+  const natural = order.map((o) => o.y);
+  let canNatural = natural[0] >= top && natural[natural.length - 1] <= bottom;
+  for (let i = 1; canNatural && i < natural.length; i++) {
+    if (natural[i] - natural[i - 1] < slot) canNatural = false;
   }
-  const out = new Array<number>(items.length);
+  if (canNatural) {
+    order.forEach((o, i) => {
+      out[o.index] = natural[i];
+    });
+    return out;
+  }
+
+  // Dense pack: equal gaps so nothing overlaps (compress only if chart is short)
+  const gap = Math.max(14, Math.min(slot, avail / (n - 1)));
+  const used = gap * (n - 1);
+  const shift = used < avail ? (avail - used) / 2 : 0;
   order.forEach((o, i) => {
-    out[o.index] = ys[i];
+    out[o.index] = top + shift + gap * i;
   });
   return out;
 }
@@ -328,18 +354,20 @@ function ChartBody({
   const allElos = series.flatMap((s) => s.points.map((p) => p.elo));
   const minElo = allElos.length ? Math.min(...allElos) : 1000;
   const maxElo = allElos.length ? Math.max(...allElos) : 1000;
-  const pad = Math.max(16, Math.round((maxElo - minElo) * 0.1) || 16);
+  const pad = Math.max(20, Math.round((maxElo - minElo) * 0.1) || 20);
   const yMin = Math.floor((minElo - pad) / 10) * 10;
   const yMax = Math.ceil((maxElo + pad) / 10) * 10;
 
-  const W = 900;
-  const H = tall ? 480 : 360;
-  const ml = 46;
-  const mr = 128;
-  const mt = 14;
-  const mb = 32;
+  // Taller plot + wide fixed right rail so end-labels never cover each other
+  const W = 1000;
+  const H = tall ? 580 : 460;
+  const ml = 52;
+  const mr = 210;
+  const mt = 20;
+  const mb = 38;
   const iw = W - ml - mr;
   const ih = H - mt - mb;
+  const labelRailX = W - mr + 10;
 
   const span = Math.max(1, matchCount);
   const xAt = (matchIndex: number) =>
@@ -371,21 +399,28 @@ function ChartBody({
       color: colorFor(s.playerId, orderedIds),
     };
   });
-  const labelYs = dodgeLabelYs(
+  const labelYs = placeLabelYs(
     labelMeta.map((l) => ({ y: l.yNatural })),
-    LABEL_GAP,
-    mt + 4,
-    H - mb - 4
+    LABEL_SLOT,
+    mt + 10,
+    H - mb - 10
   );
+
+  // Paint top→bottom so lower labels aren't covered by earlier DOM siblings
+  const labelDrawOrder = labelMeta
+    .map((lab, idx) => ({ lab, idx, y: labelYs[idx] }))
+    .sort((a, b) => a.y - b.y);
+
+  const strokeW = series.length <= 3 ? 2.85 : 2.45;
 
   return (
     <div
       className="relative overflow-x-auto rounded-lg border border-[var(--border)] bg-[var(--field-bg)] px-2 pt-2"
-      style={tall ? { minHeight: "60vh" } : undefined}
+      style={tall ? { minHeight: "65vh" } : undefined}
     >
       <svg
         viewBox={`0 0 ${W} ${H}`}
-        className={`h-auto w-full ${tall ? "min-w-[720px]" : "min-w-[560px]"}`}
+        className={`h-auto w-full ${tall ? "min-w-[860px]" : "min-w-[760px]"}`}
         role="img"
         aria-label="Rating over time"
         onMouseLeave={() => setHover(null)}
@@ -404,10 +439,10 @@ function ChartBody({
                 strokeOpacity={0.55}
               />
               <text
-                x={ml - 8}
-                y={y + 3.5}
+                x={ml - 10}
+                y={y + 4}
                 textAnchor="end"
-                fontSize="10.5"
+                fontSize="12"
                 fontFamily={MONO}
                 fill="var(--muted)"
               >
@@ -419,8 +454,8 @@ function ChartBody({
 
         <text
           x={ml}
-          y={H - 10}
-          fontSize="10.5"
+          y={H - 12}
+          fontSize="12"
           fontFamily={MONO}
           fill="var(--muted)"
         >
@@ -428,9 +463,9 @@ function ChartBody({
         </text>
         <text
           x={W - mr}
-          y={H - 10}
+          y={H - 12}
           textAnchor="end"
-          fontSize="10.5"
+          fontSize="12"
           fontFamily={MONO}
           fill="var(--muted)"
         >
@@ -456,7 +491,7 @@ function ChartBody({
                 d={d}
                 fill="none"
                 stroke={color}
-                strokeWidth={1.25}
+                strokeWidth={strokeW}
                 strokeLinejoin="round"
                 strokeLinecap="round"
                 pathLength={1}
@@ -473,7 +508,7 @@ function ChartBody({
               <circle
                 cx={xAt(last.matchIndex)}
                 cy={yAt(last.elo)}
-                r={2.8}
+                r={4.2}
                 fill={color}
                 pointerEvents="none"
               />
@@ -487,7 +522,7 @@ function ChartBody({
                     key={`${s.playerId}-${i}`}
                     cx={cx}
                     cy={cy}
-                    r={active ? 4.5 : 7}
+                    r={active ? 5.5 : 8}
                     fill={active ? color : "transparent"}
                     style={{ cursor: "crosshair" }}
                     onMouseEnter={() =>
@@ -505,28 +540,42 @@ function ChartBody({
           );
         })}
 
-        {labelMeta.map((lab, idx) => {
-          const y = labelYs[idx];
-          const showGuide = Math.abs(y - lab.yNatural) > 2;
+        {labelDrawOrder.map(({ lab, y }) => {
+          const text = `#${lab.rank} ${shortLabelName(lab.nickname)} ${lab.elo}`;
+          const tw = Math.min(mr - 16, Math.max(88, text.length * 7.6));
+          const pillH = 20;
+          const rx = labelRailX;
+          const ry = y - pillH / 2;
+          const elbowX = lab.x + Math.max(8, (labelRailX - lab.x) * 0.35);
           return (
             <g key={`label-${lab.playerId}`} pointerEvents="none">
-              {showGuide && (
-                <path
-                  d={`M ${lab.x} ${lab.yNatural} L ${lab.x + 10} ${y}`}
-                  fill="none"
-                  stroke={lab.color}
-                  strokeWidth={1}
-                  strokeOpacity={0.35}
-                />
-              )}
+              <path
+                d={`M ${lab.x} ${lab.yNatural} L ${elbowX.toFixed(1)} ${y} L ${rx - 2} ${y}`}
+                fill="none"
+                stroke={lab.color}
+                strokeWidth={1.35}
+                strokeOpacity={0.5}
+              />
+              <rect
+                x={rx - 5}
+                y={ry}
+                width={tw}
+                height={pillH}
+                rx={5}
+                fill="rgba(11, 21, 36, 0.94)"
+                stroke={lab.color}
+                strokeOpacity={0.55}
+                strokeWidth={1.1}
+              />
               <text
-                x={lab.x + 10}
-                y={y + 3.5}
+                x={rx}
+                y={y + 4.5}
                 fill={lab.color}
-                fontSize={10.5}
+                fontSize={13}
                 fontFamily={MONO}
+                fontWeight={600}
               >
-                {`#${lab.rank} ${lab.nickname} ${lab.elo}`}
+                {text}
               </text>
             </g>
           );
