@@ -4,12 +4,14 @@ import { sideLabel } from "./filters";
 import type { Game, Player } from "./types";
 
 export interface RatingPoint {
-  /** 1-based index in the filtered match list (oldest first). */
+  /** Index along the filtered match axis (start may be 0; plays are 1..n). */
   matchIndex: number;
   elo: number;
   delta: number;
   opponents: string;
   scoreline: string;
+  /** Carried-forward Elo across matches the player sat out (stock last-price hold). */
+  held?: boolean;
 }
 
 export interface RatingSeries {
@@ -24,6 +26,36 @@ export function chronologicalGames(games: Game[]): Game[] {
   );
 }
 
+/** Fill every match after a player appears, holding last Elo when they sit out. */
+export function expandFlatHold(
+  points: RatingPoint[],
+  lastMatchIndex: number
+): RatingPoint[] {
+  if (points.length === 0 || lastMatchIndex < 0) return points;
+  const sorted = [...points].sort((a, b) => a.matchIndex - b.matchIndex);
+  const at = new Map(sorted.map((p) => [p.matchIndex, p]));
+  const start = sorted[0].matchIndex;
+  const out: RatingPoint[] = [];
+  let elo = sorted[0].elo;
+  for (let m = start; m <= lastMatchIndex; m++) {
+    const real = at.get(m);
+    if (real) {
+      elo = real.elo;
+      out.push({ ...real, held: false });
+    } else {
+      out.push({
+        matchIndex: m,
+        elo,
+        delta: 0,
+        opponents: "",
+        scoreline: "",
+        held: true,
+      });
+    }
+  }
+  return out;
+}
+
 export function ratingSeriesForPlayers(
   playerIds: string[],
   players: Player[],
@@ -31,6 +63,7 @@ export function ratingSeriesForPlayers(
 ): RatingSeries[] {
   const byId = new Map(players.map((p) => [p.id, p]));
   const ordered = chronologicalGames(games);
+  const lastMatchIndex = ordered.length;
 
   return playerIds
     .map((id) => {
@@ -59,19 +92,21 @@ export function ratingSeriesForPlayers(
           ? (ordered[firstIndex].eloChanges[id]?.before ?? STARTING_ELO)
           : STARTING_ELO;
 
+      const sparse: RatingPoint[] = [
+        {
+          matchIndex: Math.max(0, firstIndex),
+          elo: startElo,
+          delta: 0,
+          opponents: "Starting rating",
+          scoreline: "",
+        },
+        ...points,
+      ];
+
       return {
         playerId: id,
         nickname: player.nickname,
-        points: [
-          {
-            matchIndex: Math.max(0, firstIndex),
-            elo: startElo,
-            delta: 0,
-            opponents: "Starting rating",
-            scoreline: "",
-          },
-          ...points,
-        ],
+        points: expandFlatHold(sparse, lastMatchIndex),
       };
     })
     .filter((s): s is RatingSeries => s !== null);

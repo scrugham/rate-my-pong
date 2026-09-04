@@ -831,6 +831,15 @@ html[data-theme="light"] .btn-primary {
   }
 }
 
+@keyframes chart-draw-unit {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

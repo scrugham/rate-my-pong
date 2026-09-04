@@ -26,10 +26,43 @@ const PALETTE = [
 ];
 
 const MIN_WINDOW = 4;
+const LABEL_GAP = 13;
+const MONO =
+  'ui-monospace, "Cascadia Mono", Consolas, "SF Mono", monospace';
 
 function colorFor(playerId: string, orderedIds: string[]): string {
   const i = orderedIds.indexOf(playerId);
   return PALETTE[(i < 0 ? 0 : i) % PALETTE.length];
+}
+
+/** Stack end-label Y positions so nearby series don't overlap. */
+function dodgeLabelYs(
+  items: { y: number }[],
+  minGap: number,
+  top: number,
+  bottom: number
+): number[] {
+  const order = items
+    .map((item, index) => ({ ...item, index }))
+    .sort((a, b) => a.y - b.y);
+  const ys = order.map((o) => o.y);
+  for (let i = 1; i < ys.length; i++) {
+    if (ys[i] - ys[i - 1] < minGap) ys[i] = ys[i - 1] + minGap;
+  }
+  if (ys.length && ys[ys.length - 1] > bottom) {
+    let overflow = ys[ys.length - 1] - bottom;
+    for (let i = ys.length - 1; i >= 0 && overflow > 0; i--) {
+      const floor = i === 0 ? top : ys[i - 1] + minGap;
+      const pull = Math.min(overflow, Math.max(0, ys[i] - floor));
+      ys[i] -= pull;
+      overflow -= pull;
+    }
+  }
+  const out = new Array<number>(items.length);
+  order.forEach((o, i) => {
+    out[o.index] = ys[i];
+  });
+  return out;
 }
 
 interface RatingChartProps {
@@ -295,16 +328,16 @@ function ChartBody({
   const allElos = series.flatMap((s) => s.points.map((p) => p.elo));
   const minElo = allElos.length ? Math.min(...allElos) : 1000;
   const maxElo = allElos.length ? Math.max(...allElos) : 1000;
-  const pad = Math.max(20, Math.round((maxElo - minElo) * 0.12) || 20);
+  const pad = Math.max(16, Math.round((maxElo - minElo) * 0.1) || 16);
   const yMin = Math.floor((minElo - pad) / 10) * 10;
   const yMax = Math.ceil((maxElo + pad) / 10) * 10;
 
-  const W = 720;
-  const H = tall ? 460 : 340;
-  const ml = 48;
-  const mr = 16;
-  const mt = 16;
-  const mb = 36;
+  const W = 900;
+  const H = tall ? 480 : 360;
+  const ml = 46;
+  const mr = 128;
+  const mt = 14;
+  const mb = 32;
   const iw = W - ml - mr;
   const ih = H - mt - mb;
 
@@ -319,6 +352,32 @@ function ChartBody({
     Math.round(yMin + ((yMax - yMin) * i) / yTicks)
   );
 
+  const ranked = [...series].sort((a, b) => {
+    const ae = a.points[a.points.length - 1]?.elo ?? 0;
+    const be = b.points[b.points.length - 1]?.elo ?? 0;
+    return be - ae;
+  });
+  const rankOf = new Map(ranked.map((s, i) => [s.playerId, i + 1]));
+
+  const labelMeta = series.map((s) => {
+    const last = s.points[s.points.length - 1];
+    return {
+      playerId: s.playerId,
+      nickname: s.nickname,
+      elo: last.elo,
+      rank: rankOf.get(s.playerId) ?? 0,
+      x: xAt(last.matchIndex),
+      yNatural: yAt(last.elo),
+      color: colorFor(s.playerId, orderedIds),
+    };
+  });
+  const labelYs = dodgeLabelYs(
+    labelMeta.map((l) => ({ y: l.yNatural })),
+    LABEL_GAP,
+    mt + 4,
+    H - mb - 4
+  );
+
   return (
     <div
       className="relative overflow-x-auto rounded-lg border border-[var(--border)] bg-[var(--field-bg)] px-2 pt-2"
@@ -326,7 +385,7 @@ function ChartBody({
     >
       <svg
         viewBox={`0 0 ${W} ${H}`}
-        className={`h-auto w-full ${tall ? "min-w-[640px]" : "min-w-[520px]"}`}
+        className={`h-auto w-full ${tall ? "min-w-[720px]" : "min-w-[560px]"}`}
         role="img"
         aria-label="Rating over time"
         onMouseLeave={() => setHover(null)}
@@ -342,12 +401,14 @@ function ChartBody({
                 y2={y}
                 stroke="var(--border)"
                 strokeWidth="1"
+                strokeOpacity={0.55}
               />
               <text
                 x={ml - 8}
-                y={y + 4}
+                y={y + 3.5}
                 textAnchor="end"
-                fontSize="11"
+                fontSize="10.5"
+                fontFamily={MONO}
                 fill="var(--muted)"
               >
                 {elo}
@@ -356,31 +417,21 @@ function ChartBody({
           );
         })}
 
-        <line
-          x1={ml}
-          x2={ml}
-          y1={mt}
-          y2={H - mb}
-          stroke="var(--border)"
-          strokeWidth="1"
-        />
-        <line
-          x1={ml}
-          x2={W - mr}
-          y1={H - mb}
-          y2={H - mb}
-          stroke="var(--border)"
-          strokeWidth="1"
-        />
-
-        <text x={ml} y={H - 10} fontSize="11" fill="var(--muted)">
+        <text
+          x={ml}
+          y={H - 10}
+          fontSize="10.5"
+          fontFamily={MONO}
+          fill="var(--muted)"
+        >
           Older
         </text>
         <text
           x={W - mr}
           y={H - 10}
           textAnchor="end"
-          fontSize="11"
+          fontSize="10.5"
+          fontFamily={MONO}
           fill="var(--muted)"
         >
           Newer
@@ -391,45 +442,92 @@ function ChartBody({
           const d = s.points
             .map(
               (p, i) =>
-                `${i === 0 ? "M" : "L"} ${xAt(p.matchIndex)} ${yAt(p.elo)}`
+                `${i === 0 ? "M" : "L"} ${xAt(p.matchIndex).toFixed(1)} ${yAt(p.elo).toFixed(1)}`
             )
             .join(" ");
+          const last = s.points[s.points.length - 1];
+          const interactive = s.points
+            .map((p, i) => ({ p, i }))
+            .filter(({ p }) => !p.held);
+
           return (
             <g key={s.playerId}>
               <path
                 d={d}
                 fill="none"
                 stroke={color}
-                strokeWidth="2.4"
+                strokeWidth={1.25}
                 strokeLinejoin="round"
                 strokeLinecap="round"
+                pathLength={1}
                 style={
                   animate
                     ? {
-                        strokeDasharray: 2400,
+                        strokeDasharray: 1,
                         strokeDashoffset: 0,
-                        animation: "chart-draw 0.9s ease-out",
+                        animation: "chart-draw-unit 0.85s ease-out",
                       }
                     : undefined
                 }
               />
-              {s.points.map((p, i) => (
-                <circle
-                  key={`${s.playerId}-${i}`}
-                  cx={xAt(p.matchIndex)}
-                  cy={yAt(p.elo)}
-                  r={hover?.playerId === s.playerId && hover.i === i ? 5 : 3}
-                  fill={color}
-                  onMouseEnter={() =>
-                    setHover({
-                      playerId: s.playerId,
-                      i,
-                      x: xAt(p.matchIndex),
-                      y: yAt(p.elo),
-                    })
-                  }
+              <circle
+                cx={xAt(last.matchIndex)}
+                cy={yAt(last.elo)}
+                r={2.8}
+                fill={color}
+                pointerEvents="none"
+              />
+              {interactive.map(({ p, i }) => {
+                const cx = xAt(p.matchIndex);
+                const cy = yAt(p.elo);
+                const active =
+                  hover?.playerId === s.playerId && hover.i === i;
+                return (
+                  <circle
+                    key={`${s.playerId}-${i}`}
+                    cx={cx}
+                    cy={cy}
+                    r={active ? 4.5 : 7}
+                    fill={active ? color : "transparent"}
+                    style={{ cursor: "crosshair" }}
+                    onMouseEnter={() =>
+                      setHover({
+                        playerId: s.playerId,
+                        i,
+                        x: cx,
+                        y: cy,
+                      })
+                    }
+                  />
+                );
+              })}
+            </g>
+          );
+        })}
+
+        {labelMeta.map((lab, idx) => {
+          const y = labelYs[idx];
+          const showGuide = Math.abs(y - lab.yNatural) > 2;
+          return (
+            <g key={`label-${lab.playerId}`} pointerEvents="none">
+              {showGuide && (
+                <path
+                  d={`M ${lab.x} ${lab.yNatural} L ${lab.x + 10} ${y}`}
+                  fill="none"
+                  stroke={lab.color}
+                  strokeWidth={1}
+                  strokeOpacity={0.35}
                 />
-              ))}
+              )}
+              <text
+                x={lab.x + 10}
+                y={y + 3.5}
+                fill={lab.color}
+                fontSize={10.5}
+                fontFamily={MONO}
+              >
+                {`#${lab.rank} ${lab.nickname} ${lab.elo}`}
+              </text>
             </g>
           );
         })}
@@ -439,9 +537,10 @@ function ChartBody({
         (() => {
           const s = series.find((x) => x.playerId === hover.playerId);
           const pt = s?.points[hover.i];
-          if (!s || !pt) return null;
+          if (!s || !pt || pt.held) return null;
           const player = players.find((p) => p.id === s.playerId);
-          const left = hover.x > W * 0.62;
+          const left = hover.x > W * 0.55;
+          const rank = rankOf.get(s.playerId);
           return (
             <div
               className="pointer-events-none absolute z-10 max-w-[220px] rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs shadow-lg"
@@ -456,8 +555,11 @@ function ChartBody({
             >
               <p className="font-medium text-[var(--foreground)]">
                 {player ? displayName(player) : s.nickname}
+                {rank != null && (
+                  <span className="text-[var(--muted)]"> · #{rank}</span>
+                )}
               </p>
-              <p className="mt-0.5 text-[var(--muted)]">
+              <p className="mt-0.5 font-mono text-[var(--cyan)]">
                 {pt.elo} ELO
                 {pt.delta !== 0 && (
                   <span

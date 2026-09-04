@@ -29,9 +29,9 @@ export function RatingTrends() {
           Rating over time
         </h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Match by match, oldest on the left. Everyone starts plotted; tap a
-          name to hide them. Drag the zoom to focus on a shorter run, and
-          expand for a bigger view.
+          Match by match, oldest on the left. Idle stretches hold last Elo.
+          Tap a name to hide them, zoom for a shorter run, expand for a bigger
+          view.
         </p>
       </div>
       <RatingChart players={players} games={games} />
