@@ -265,6 +265,9 @@ export function RatingChart({
               Close
             </button>
           </header>
+          <div className="shrink-0 border-b border-[var(--border)] px-4 py-2.5 sm:px-6">
+            {legend}
+          </div>
           <div className="flex min-h-0 flex-1 flex-col p-3 sm:p-4">
             {chart}
           </div>
