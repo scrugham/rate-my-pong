@@ -31,7 +31,7 @@ export function RatingTrends() {
         <p className="mt-1 text-sm text-[var(--muted)]">
           Match by match, oldest on the left. Idle stretches hold last Elo.
           Tap a name to hide them, zoom for a shorter run, expand for a bigger
-          view.
+          view. Rankings under the chart show current Elo in the window.
         </p>
       </div>
       <RatingChart players={players} games={games} />

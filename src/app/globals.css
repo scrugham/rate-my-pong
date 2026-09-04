@@ -708,7 +708,7 @@ html[data-theme="light"] .btn-primary {
 }
 
 .lb-row.is-updated {
-  animation: lb-flash 1.8s ease-out;
+  animation: lb-flash 3.2s ease-out;
 }
 
 @keyframes lb-flash {
@@ -744,7 +744,7 @@ html[data-theme="light"] .btn-primary {
 }
 
 .lb-pop.is-playing {
-  animation: lb-pop 1.8s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: lb-pop 3.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @keyframes lb-pop {
@@ -767,6 +767,102 @@ html[data-theme="light"] .btn-primary {
 
 .lb-elo {
   font-variant-numeric: tabular-nums;
+}
+
+/* Log → leaderboard Elo pills handoff */
+.log-result-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  text-align: center;
+  background: rgba(11, 21, 36, 0.88);
+  backdrop-filter: blur(8px);
+  animation: log-result-in 0.35s ease-out;
+}
+
+.log-result-overlay[data-leaving="true"] {
+  animation: log-result-out 0.3s ease-in forwards;
+}
+
+@keyframes log-result-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes log-result-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.log-result-title {
+  margin: 0;
+  font-size: clamp(1.35rem, 4vw, 1.85rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--foreground);
+}
+
+.log-result-sub {
+  margin: 0.4rem 0 0;
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+.log-result-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-top: 1.15rem;
+  max-width: 28rem;
+}
+
+.log-result-pill {
+  border-radius: 999px;
+  padding: 0.4rem 0.85rem;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.88rem;
+  font-weight: 650;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transform: translateY(10px) scale(0.94);
+  animation: log-pill-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.log-result-pill[data-dir="up"] {
+  color: var(--lime);
+}
+
+.log-result-pill[data-dir="down"] {
+  color: var(--magenta);
+}
+
+@keyframes log-pill-in {
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.log-result-go {
+  margin-top: 1.25rem;
+  font-size: 0.8rem;
+  color: var(--cyan);
+  letter-spacing: 0.04em;
 }
 
 /* History disclosure */

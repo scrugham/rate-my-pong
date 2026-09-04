@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { displayName } from "@/lib/format";
 import { chronologicalGames, ratingSeriesForPlayers } from "@/lib/rating-history";
 import { usePrefersReducedMotion } from "@/lib/use-media";
@@ -26,69 +26,12 @@ const PALETTE = [
 ];
 
 const MIN_WINDOW = 4;
-/** Vertical space reserved per end-label (pill height + padding). */
-const LABEL_SLOT = 22;
 const MONO =
   'ui-monospace, "Cascadia Mono", Consolas, "SF Mono", monospace';
 
 function colorFor(playerId: string, orderedIds: string[]): string {
   const i = orderedIds.indexOf(playerId);
   return PALETTE[(i < 0 ? 0 : i) % PALETTE.length];
-}
-
-function shortLabelName(nickname: string, max = 14): string {
-  const t = nickname.trim();
-  if (t.length <= max) return t;
-  return `${t.slice(0, max - 1)}…`;
-}
-
-/**
- * Always place labels on an evenly spaced right rail (Elo order).
- * Natural Y is only used for leader-line anchors — never for text position —
- * so mid-pack names cannot cover each other.
- */
-function placeLabelYs(
-  items: { y: number }[],
-  slot: number,
-  top: number,
-  bottom: number
-): number[] {
-  const n = items.length;
-  if (n === 0) return [];
-
-  const order = items
-    .map((item, index) => ({ ...item, index }))
-    .sort((a, b) => a.y - b.y || a.index - b.index);
-
-  const avail = Math.max(slot, bottom - top);
-  const out = new Array<number>(n);
-
-  if (n === 1) {
-    out[order[0].index] = Math.min(bottom, Math.max(top, order[0].y));
-    return out;
-  }
-
-  // Prefer natural spacing when everyone is already far apart
-  const natural = order.map((o) => o.y);
-  let canNatural = natural[0] >= top && natural[natural.length - 1] <= bottom;
-  for (let i = 1; canNatural && i < natural.length; i++) {
-    if (natural[i] - natural[i - 1] < slot) canNatural = false;
-  }
-  if (canNatural) {
-    order.forEach((o, i) => {
-      out[o.index] = natural[i];
-    });
-    return out;
-  }
-
-  // Dense pack: equal gaps so nothing overlaps (compress only if chart is short)
-  const gap = Math.max(14, Math.min(slot, avail / (n - 1)));
-  const used = gap * (n - 1);
-  const shift = used < avail ? (avail - used) / 2 : 0;
-  order.forEach((o, i) => {
-    out[o.index] = top + shift + gap * i;
-  });
-  return out;
 }
 
 interface RatingChartProps {
@@ -181,6 +124,62 @@ export function RatingChart({
 
   const orderedIds = useMemo(() => withGames.map((p) => p.id), [withGames]);
 
+  const zoomLabel =
+    visibleGames.length === total
+      ? `All ${total} matches`
+      : `Last ${visibleGames.length} of ${total}`;
+
+  const zoomControl = (
+    <div className="min-w-[140px] flex-1 sm:max-w-[280px]">
+      <div className="mb-1 flex items-baseline justify-between gap-3">
+        <span className="label !mb-0">Zoom</span>
+        <span className="text-xs font-semibold text-[var(--cyan)]">
+          {zoomLabel}
+        </span>
+      </div>
+      <input
+        className="range"
+        type="range"
+        min={Math.min(MIN_WINDOW, maxWindow)}
+        max={maxWindow}
+        step={1}
+        value={windowSize}
+        disabled={total <= MIN_WINDOW}
+        onChange={(e) => setZoom(Number(e.target.value))}
+        style={{
+          ["--range-pct" as string]: `${
+            maxWindow === MIN_WINDOW
+              ? 100
+              : ((windowSize - MIN_WINDOW) / (maxWindow - MIN_WINDOW)) * 100
+          }%`,
+        }}
+        aria-label="Zoom the chart in or out"
+      />
+    </div>
+  );
+
+  const presetBtns = (
+    <>
+      <button
+        type="button"
+        className="chip"
+        onClick={() => setSelected(withGames.map((p) => p.id))}
+      >
+        Everyone
+      </button>
+      <button
+        type="button"
+        className="chip"
+        onClick={() => setSelected(withGames.slice(0, 3).map((p) => p.id))}
+      >
+        Top 3
+      </button>
+      <button type="button" className="chip" onClick={() => setSelected([])}>
+        Clear
+      </button>
+    </>
+  );
+
   const chart = (
     <ChartBody
       series={series}
@@ -191,71 +190,10 @@ export function RatingChart({
       setHover={setHover}
       tall={expanded}
       animate={!reduceMotion}
+      onTogglePlayer={toggle}
+      selected={selected}
+      fillIdPrefix={expanded ? "x" : "i"}
     />
-  );
-
-  const controls = (
-    <div className="flex flex-wrap items-end justify-between gap-4">
-      <div className="w-full sm:max-w-[260px]">
-        <div className="mb-2 flex items-baseline justify-between gap-3">
-          <span className="label !mb-0">Zoom</span>
-          <span className="text-xs font-semibold text-[var(--cyan)]">
-            {visibleGames.length === total
-              ? `All ${total} matches`
-              : `Last ${visibleGames.length} of ${total}`}
-          </span>
-        </div>
-        <input
-          className="range"
-          type="range"
-          min={Math.min(MIN_WINDOW, maxWindow)}
-          max={maxWindow}
-          step={1}
-          value={windowSize}
-          disabled={total <= MIN_WINDOW}
-          onChange={(e) => setZoom(Number(e.target.value))}
-          style={{
-            ["--range-pct" as string]: `${
-              maxWindow === MIN_WINDOW
-                ? 100
-                : ((windowSize - MIN_WINDOW) / (maxWindow - MIN_WINDOW)) * 100
-            }%`,
-          }}
-          aria-label="Zoom the chart in or out"
-        />
-        <div className="mt-1 flex justify-between text-[0.7rem] text-[var(--muted)]">
-          <span>Zoomed in</span>
-          <span>Everything</span>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          className="chip"
-          onClick={() => setSelected(withGames.map((p) => p.id))}
-        >
-          Everyone
-        </button>
-        <button
-          type="button"
-          className="chip"
-          onClick={() => setSelected(withGames.slice(0, 3).map((p) => p.id))}
-        >
-          Top 3
-        </button>
-        <button type="button" className="chip" onClick={() => setSelected([])}>
-          Clear
-        </button>
-        <button
-          type="button"
-          className="chip"
-          onClick={() => setExpanded((v) => !v)}
-        >
-          {expanded ? "Close" : "Expand"}
-        </button>
-      </div>
-    </div>
   );
 
   const legend = (
@@ -284,11 +222,25 @@ export function RatingChart({
 
   return (
     <>
-      <div className="space-y-4">
-        {controls}
-        {legend}
-        {chart}
-      </div>
+      {!expanded && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            {zoomControl}
+            <div className="flex flex-wrap gap-2">
+              {presetBtns}
+              <button
+                type="button"
+                className="chip"
+                onClick={() => setExpanded(true)}
+              >
+                Expand
+              </button>
+            </div>
+          </div>
+          {legend}
+          {chart}
+        </div>
+      )}
 
       {expanded && (
         <div
@@ -297,21 +249,23 @@ export function RatingChart({
           aria-modal="true"
           aria-label="Rating over time"
         >
-          <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3 sm:px-6">
-            <h2 className="text-base font-semibold text-[var(--foreground)]">
+          <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-[var(--border)] px-4 py-2.5 sm:gap-4 sm:px-6">
+            <h2 className="shrink-0 text-base font-semibold text-[var(--foreground)]">
               Rating over time
             </h2>
+            <div className="order-3 flex w-full flex-wrap items-end gap-3 sm:order-none sm:w-auto sm:flex-1 sm:gap-4">
+              {zoomControl}
+              <div className="flex flex-wrap gap-2">{presetBtns}</div>
+            </div>
             <button
               type="button"
-              className="chip"
+              className="chip ml-auto"
               onClick={() => setExpanded(false)}
             >
               Close
             </button>
-          </div>
-          <div className="flex-1 space-y-4 overflow-auto p-4 sm:p-6">
-            {controls}
-            {legend}
+          </header>
+          <div className="flex min-h-0 flex-1 flex-col p-3 sm:p-4">
             {chart}
           </div>
         </div>
@@ -331,6 +285,10 @@ interface ChartBodyProps {
   ) => void;
   tall: boolean;
   animate: boolean;
+  selected: string[];
+  onTogglePlayer: (id: string) => void;
+  /** Avoid duplicate SVG gradient ids if both modes ever mount. */
+  fillIdPrefix?: string;
 }
 
 function ChartBody({
@@ -342,10 +300,41 @@ function ChartBody({
   setHover,
   tall,
   animate,
+  selected,
+  onTogglePlayer,
+  fillIdPrefix = "c",
 }: ChartBodyProps) {
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const plotRef = useRef<HTMLDivElement | null>(null);
+  const drewOnce = useRef(false);
+  const [doDraw, setDoDraw] = useState(false);
+  const [plotSize, setPlotSize] = useState({ w: 720, h: 380 });
+
+  useEffect(() => {
+    if (!animate || drewOnce.current) return;
+    drewOnce.current = true;
+    setDoDraw(true);
+  }, [animate]);
+
+  useEffect(() => {
+    const el = plotRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const cr = entries[0]?.contentRect;
+      if (!cr || cr.width < 40 || cr.height < 40) return;
+      setPlotSize({ w: cr.width, h: cr.height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [tall]);
+
   if (series.length === 0) {
     return (
-      <p className="rounded-lg border border-[var(--border)] bg-[var(--field-bg)] py-12 text-center text-sm text-[var(--muted)]">
+      <p
+        className={`rounded-lg border border-[var(--border)] bg-[var(--field-bg)] py-12 text-center text-sm text-[var(--muted)] ${
+          tall ? "flex h-full items-center justify-center" : ""
+        }`}
+      >
         Pick a player to plot their rating.
       </p>
     );
@@ -354,20 +343,18 @@ function ChartBody({
   const allElos = series.flatMap((s) => s.points.map((p) => p.elo));
   const minElo = allElos.length ? Math.min(...allElos) : 1000;
   const maxElo = allElos.length ? Math.max(...allElos) : 1000;
-  const pad = Math.max(20, Math.round((maxElo - minElo) * 0.1) || 20);
+  const pad = Math.max(24, Math.round((maxElo - minElo) * 0.1) || 24);
   const yMin = Math.floor((minElo - pad) / 10) * 10;
   const yMax = Math.ceil((maxElo + pad) / 10) * 10;
 
-  // Taller plot + wide fixed right rail so end-labels never cover each other
-  const W = 1000;
-  const H = tall ? 580 : 460;
-  const ml = 52;
-  const mr = 210;
-  const mt = 20;
-  const mb = 38;
+  const W = tall ? Math.max(480, Math.round(plotSize.w)) : 720;
+  const H = tall ? Math.max(280, Math.round(plotSize.h)) : 380;
+  const ml = 48;
+  const mr = 20;
+  const mt = 18;
+  const mb = 30;
   const iw = W - ml - mr;
   const ih = H - mt - mb;
-  const labelRailX = W - mr + 10;
 
   const span = Math.max(1, matchCount);
   const xAt = (matchIndex: number) =>
@@ -387,252 +374,405 @@ function ChartBody({
   });
   const rankOf = new Map(ranked.map((s, i) => [s.playerId, i + 1]));
 
-  const labelMeta = series.map((s) => {
-    const last = s.points[s.points.length - 1];
+  const strokeW = series.length <= 3 ? 2.8 : 2.35;
+
+  function svgPoint(evt: MouseEvent<SVGSVGElement>) {
+    const svg = svgRef.current;
+    if (!svg) return null;
+    const pt = svg.createSVGPoint();
+    pt.x = evt.clientX;
+    pt.y = evt.clientY;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return null;
+    return pt.matrixTransform(ctm.inverse());
+  }
+
+  function eloAtMatch(
+    points: { matchIndex: number; elo: number }[],
+    matchF: number
+  ): number | null {
+    if (!points.length) return null;
+    if (matchF <= points[0].matchIndex) return points[0].elo;
+    const last = points[points.length - 1];
+    if (matchF >= last.matchIndex) return last.elo;
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1];
+      const b = points[i];
+      if (matchF <= b.matchIndex) {
+        const t =
+          (matchF - a.matchIndex) / Math.max(1e-6, b.matchIndex - a.matchIndex);
+        return a.elo + (b.elo - a.elo) * t;
+      }
+    }
+    return last.elo;
+  }
+
+  function nearestHit(svgX: number, svgY: number) {
+    if (svgX < ml - 6 || svgX > W - mr + 6) return null;
+
+    const matchF =
+      matchCount <= 1
+        ? 1
+        : ((svgX - ml) / Math.max(1, iw)) * span;
+
+    // Pick the series whose line is closest in Y at this X (not nearest game-dot)
+    type Cand = { playerId: string; yDist: number; lineY: number };
+    const cands: Cand[] = [];
+    for (const s of series) {
+      const elo = eloAtMatch(s.points, matchF);
+      if (elo == null) continue;
+      const lineY = yAt(elo);
+      cands.push({
+        playerId: s.playerId,
+        yDist: Math.abs(lineY - svgY),
+        lineY,
+      });
+    }
+    if (!cands.length) return null;
+    cands.sort((a, b) => a.yDist - b.yDist);
+    const closest = cands[0];
+    if (closest.yDist > 36) return null;
+
+    // If two lines are nearly tied, stick with the current hover so it doesn't flicker
+    const sticky = hover?.playerId;
+    let pick = closest;
+    if (sticky) {
+      const cur = cands.find((c) => c.playerId === sticky);
+      if (cur && cur.yDist <= closest.yDist + 10 && cur.yDist <= 40) {
+        pick = cur;
+      }
+    }
+
+    const s = series.find((x) => x.playerId === pick.playerId);
+    if (!s) return null;
+
+    // Tip: nearest sample; prefer a nearby real game over a flat-hold sample
+    let bestI = 0;
+    let bestScore = Infinity;
+    for (let i = 0; i < s.points.length; i++) {
+      const p = s.points[i];
+      const d = Math.abs(p.matchIndex - matchF);
+      const score = d + (p.held ? 2.5 : 0);
+      if (score < bestScore) {
+        bestScore = score;
+        bestI = i;
+      }
+    }
+
     return {
       playerId: s.playerId,
-      nickname: s.nickname,
-      elo: last.elo,
-      rank: rankOf.get(s.playerId) ?? 0,
-      x: xAt(last.matchIndex),
-      yNatural: yAt(last.elo),
-      color: colorFor(s.playerId, orderedIds),
+      i: bestI,
+      x: svgX,
+      y: pick.lineY,
     };
-  });
-  const labelYs = placeLabelYs(
-    labelMeta.map((l) => ({ y: l.yNatural })),
-    LABEL_SLOT,
-    mt + 10,
-    H - mb - 10
-  );
+  }
 
-  // Paint top→bottom so lower labels aren't covered by earlier DOM siblings
-  const labelDrawOrder = labelMeta
-    .map((lab, idx) => ({ lab, idx, y: labelYs[idx] }))
-    .sort((a, b) => a.y - b.y);
-
-  const strokeW = series.length <= 3 ? 2.85 : 2.45;
+  const hoverSeries = hover
+    ? series.find((s) => s.playerId === hover.playerId)
+    : null;
+  const hoverPt = hoverSeries?.points[hover!.i];
+  const tipBelow = hover ? hover.y < H * 0.28 : false;
 
   return (
     <div
-      className="relative overflow-x-auto rounded-lg border border-[var(--border)] bg-[var(--field-bg)] px-2 pt-2"
-      style={tall ? { minHeight: "65vh" } : undefined}
+      className={`rounded-lg border border-[var(--border)] bg-[var(--field-bg)] ${
+        tall ? "flex h-full min-h-0 flex-col" : ""
+      }`}
     >
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        className={`h-auto w-full ${tall ? "min-w-[860px]" : "min-w-[760px]"}`}
-        role="img"
-        aria-label="Rating over time"
-        onMouseLeave={() => setHover(null)}
+      <div
+        ref={plotRef}
+        className={`relative min-w-0 p-2 sm:p-3 ${
+          tall ? "min-h-0 flex-1" : ""
+        }`}
       >
-        {yLabels.map((elo) => {
-          const y = yAt(elo);
-          return (
-            <g key={elo}>
-              <line
-                x1={ml}
-                x2={W - mr}
-                y1={y}
-                y2={y}
-                stroke="var(--border)"
-                strokeWidth="1"
-                strokeOpacity={0.55}
-              />
-              <text
-                x={ml - 10}
-                y={y + 4}
-                textAnchor="end"
-                fontSize="12"
-                fontFamily={MONO}
-                fill="var(--muted)"
-              >
-                {elo}
-              </text>
-            </g>
-          );
-        })}
-
-        <text
-          x={ml}
-          y={H - 12}
-          fontSize="12"
-          fontFamily={MONO}
-          fill="var(--muted)"
-        >
-          Older
-        </text>
-        <text
-          x={W - mr}
-          y={H - 12}
-          textAnchor="end"
-          fontSize="12"
-          fontFamily={MONO}
-          fill="var(--muted)"
-        >
-          Newer
-        </text>
-
-        {series.map((s) => {
-          const color = colorFor(s.playerId, orderedIds);
-          const d = s.points
-            .map(
-              (p, i) =>
-                `${i === 0 ? "M" : "L"} ${xAt(p.matchIndex).toFixed(1)} ${yAt(p.elo).toFixed(1)}`
-            )
-            .join(" ");
-          const last = s.points[s.points.length - 1];
-          const interactive = s.points
-            .map((p, i) => ({ p, i }))
-            .filter(({ p }) => !p.held);
-
-          return (
-            <g key={s.playerId}>
-              <path
-                d={d}
-                fill="none"
-                stroke={color}
-                strokeWidth={strokeW}
-                strokeLinejoin="round"
-                strokeLinecap="round"
-                pathLength={1}
-                style={
-                  animate
-                    ? {
-                        strokeDasharray: 1,
-                        strokeDashoffset: 0,
-                        animation: "chart-draw-unit 0.85s ease-out",
-                      }
-                    : undefined
-                }
-              />
-              <circle
-                cx={xAt(last.matchIndex)}
-                cy={yAt(last.elo)}
-                r={4.2}
-                fill={color}
-                pointerEvents="none"
-              />
-              {interactive.map(({ p, i }) => {
-                const cx = xAt(p.matchIndex);
-                const cy = yAt(p.elo);
-                const active =
-                  hover?.playerId === s.playerId && hover.i === i;
+          <svg
+            ref={svgRef}
+            viewBox={`0 0 ${W} ${H}`}
+            className={tall ? "h-full w-full" : "h-auto w-full"}
+            preserveAspectRatio="xMidYMid meet"
+            role="img"
+            aria-label="Rating over time"
+            style={{ cursor: "crosshair" }}
+            onMouseLeave={() => setHover(null)}
+            onMouseMove={(evt) => {
+              const pt = svgPoint(evt);
+              if (!pt) return;
+              const hit = nearestHit(pt.x, pt.y);
+              if (!hit) {
+                if (hover) setHover(null);
+                return;
+              }
+              if (
+                !hover ||
+                hover.playerId !== hit.playerId ||
+                hover.i !== hit.i ||
+                Math.abs(hover.x - hit.x) > 0.5 ||
+                Math.abs(hover.y - hit.y) > 0.5
+              ) {
+                setHover({
+                  playerId: hit.playerId,
+                  i: hit.i,
+                  x: hit.x,
+                  y: hit.y,
+                });
+              }
+            }}
+          >
+            <defs>
+              {series.map((s) => {
+                const color = colorFor(s.playerId, orderedIds);
                 return (
-                  <circle
-                    key={`${s.playerId}-${i}`}
-                    cx={cx}
-                    cy={cy}
-                    r={active ? 5.5 : 8}
-                    fill={active ? color : "transparent"}
-                    style={{ cursor: "crosshair" }}
-                    onMouseEnter={() =>
-                      setHover({
-                        playerId: s.playerId,
-                        i,
-                        x: cx,
-                        y: cy,
-                      })
-                    }
-                  />
+                  <linearGradient
+                    key={`fill-${s.playerId}`}
+                    id={`${fillIdPrefix}-rating-fill-${s.playerId}`}
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop offset="0%" stopColor={color} stopOpacity="0.32" />
+                    <stop offset="100%" stopColor={color} stopOpacity="0" />
+                  </linearGradient>
                 );
               })}
-            </g>
-          );
-        })}
+            </defs>
 
-        {labelDrawOrder.map(({ lab, y }) => {
-          const text = `#${lab.rank} ${shortLabelName(lab.nickname)} ${lab.elo}`;
-          const tw = Math.min(mr - 16, Math.max(88, text.length * 7.6));
-          const pillH = 20;
-          const rx = labelRailX;
-          const ry = y - pillH / 2;
-          const elbowX = lab.x + Math.max(8, (labelRailX - lab.x) * 0.35);
-          return (
-            <g key={`label-${lab.playerId}`} pointerEvents="none">
-              <path
-                d={`M ${lab.x} ${lab.yNatural} L ${elbowX.toFixed(1)} ${y} L ${rx - 2} ${y}`}
-                fill="none"
-                stroke={lab.color}
-                strokeWidth={1.35}
-                strokeOpacity={0.5}
-              />
-              <rect
-                x={rx - 5}
-                y={ry}
-                width={tw}
-                height={pillH}
-                rx={5}
-                fill="rgba(11, 21, 36, 0.94)"
-                stroke={lab.color}
-                strokeOpacity={0.55}
-                strokeWidth={1.1}
-              />
-              <text
-                x={rx}
-                y={y + 4.5}
-                fill={lab.color}
-                fontSize={13}
-                fontFamily={MONO}
-                fontWeight={600}
-              >
-                {text}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
+            {yLabels.map((elo) => {
+              const y = yAt(elo);
+              return (
+                <g key={elo}>
+                  <line
+                    x1={ml}
+                    x2={W - mr}
+                    y1={y}
+                    y2={y}
+                    stroke="var(--border)"
+                    strokeWidth="1"
+                    strokeOpacity={0.55}
+                  />
+                  <text
+                    x={ml - 8}
+                    y={y + 4}
+                    textAnchor="end"
+                    fontSize="11"
+                    fontFamily={MONO}
+                    fill="var(--muted)"
+                  >
+                    {elo}
+                  </text>
+                </g>
+              );
+            })}
 
-      {hover &&
-        (() => {
-          const s = series.find((x) => x.playerId === hover.playerId);
-          const pt = s?.points[hover.i];
-          if (!s || !pt || pt.held) return null;
-          const player = players.find((p) => p.id === s.playerId);
-          const left = hover.x > W * 0.55;
-          const rank = rankOf.get(s.playerId);
-          return (
+            <text
+              x={ml}
+              y={H - 8}
+              fontSize="11"
+              fontFamily={MONO}
+              fill="var(--muted)"
+            >
+              Older
+            </text>
+            <text
+              x={W - mr}
+              y={H - 8}
+              textAnchor="end"
+              fontSize="11"
+              fontFamily={MONO}
+              fill="var(--muted)"
+            >
+              Newer
+            </text>
+
+            {series.map((s) => {
+              const color = colorFor(s.playerId, orderedIds);
+              const active = hover?.playerId === s.playerId;
+              const dim = hover != null && !active;
+              const d = s.points
+                .map(
+                  (p, i) =>
+                    `${i === 0 ? "M" : "L"} ${xAt(p.matchIndex).toFixed(1)} ${yAt(p.elo).toFixed(1)}`
+                )
+                .join(" ");
+              const last = s.points[s.points.length - 1];
+              const first = s.points[0];
+              const areaD =
+                s.points.length >= 2
+                  ? `${d} L ${xAt(last.matchIndex).toFixed(1)} ${H - mb} L ${xAt(first.matchIndex).toFixed(1)} ${H - mb} Z`
+                  : "";
+              return (
+                <g
+                  key={s.playerId}
+                  opacity={dim ? 0.28 : 1}
+                  style={{ transition: "opacity 0.12s ease" }}
+                >
+                  {active && areaD && (
+                    <path
+                      d={areaD}
+                      fill={`url(#${fillIdPrefix}-rating-fill-${s.playerId})`}
+                      pointerEvents="none"
+                    />
+                  )}
+                  <path
+                    d={d}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={active ? strokeW + 0.7 : strokeW}
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                    pathLength={1}
+                    style={
+                      doDraw
+                        ? {
+                            strokeDasharray: 1,
+                            strokeDashoffset: 0,
+                            animation: "chart-draw-unit 0.75s ease-out",
+                          }
+                        : undefined
+                    }
+                  />
+                  <circle
+                    cx={xAt(last.matchIndex)}
+                    cy={yAt(last.elo)}
+                    r={active ? 4.5 : 3.4}
+                    fill={color}
+                  />
+                </g>
+              );
+            })}
+
+            {hover && (
+              <circle
+                cx={hover.x}
+                cy={hover.y}
+                r={5.5}
+                fill={colorFor(hover.playerId, orderedIds)}
+                stroke="var(--background)"
+                strokeWidth={2}
+              />
+            )}
+          </svg>
+
+          {hover && hoverSeries && hoverPt && (
             <div
-              className="pointer-events-none absolute z-10 max-w-[220px] rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs shadow-lg"
+              className="pointer-events-none absolute z-20 max-w-[240px] rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm shadow-xl"
               style={{
-                left: left ? undefined : `${(hover.x / W) * 100}%`,
-                right: left ? `${(1 - hover.x / W) * 100}%` : undefined,
-                top: `${Math.max(8, (hover.y / H) * 100 - 8)}%`,
-                transform: left
-                  ? "translate(-8px, -100%)"
-                  : "translate(8px, -100%)",
+                left: `${Math.min(72, Math.max(4, (hover.x / W) * 100))}%`,
+                top: tipBelow
+                  ? `${Math.min(88, (hover.y / H) * 100 + 3)}%`
+                  : `${Math.max(4, (hover.y / H) * 100)}%`,
+                transform: tipBelow
+                  ? "translate(-50%, 0)"
+                  : "translate(-50%, calc(-100% - 10px))",
               }}
             >
-              <p className="font-medium text-[var(--foreground)]">
-                {player ? displayName(player) : s.nickname}
-                {rank != null && (
-                  <span className="text-[var(--muted)]"> · #{rank}</span>
-                )}
+              <p className="font-semibold text-[var(--foreground)]">
+                {(() => {
+                  const player = players.find((p) => p.id === hoverSeries.playerId);
+                  return player ? displayName(player) : hoverSeries.nickname;
+                })()}
+                <span className="font-normal text-[var(--muted)]">
+                  {" "}
+                  · #{rankOf.get(hoverSeries.playerId)}
+                </span>
               </p>
               <p className="mt-0.5 font-mono text-[var(--cyan)]">
-                {pt.elo} ELO
-                {pt.delta !== 0 && (
+                {hoverPt.elo} ELO
+                {hoverPt.held ? (
+                  <span className="font-sans text-[var(--muted)]"> · holding</span>
+                ) : hoverPt.delta !== 0 ? (
                   <span
                     className={
-                      pt.delta > 0
+                      hoverPt.delta > 0
                         ? "text-[var(--lime)]"
                         : "text-[var(--magenta)]"
                     }
                   >
                     {" "}
-                    {pt.delta > 0 ? `+${pt.delta}` : pt.delta}
+                    {hoverPt.delta > 0 ? `+${hoverPt.delta}` : hoverPt.delta}
                   </span>
-                )}
+                ) : null}
               </p>
-              {pt.opponents && (
-                <p className="mt-0.5 text-[var(--muted)]">
-                  {pt.scoreline
-                    ? `vs ${pt.opponents} · ${pt.scoreline}`
-                    : pt.opponents}
+              {hoverPt.held ? (
+                <p className="mt-0.5 text-xs text-[var(--muted)]">
+                  No game this match · last Elo held
                 </p>
-              )}
+              ) : hoverPt.opponents ? (
+                <p className="mt-0.5 text-xs text-[var(--muted)]">
+                  {hoverPt.scoreline
+                    ? `vs ${hoverPt.opponents} · ${hoverPt.scoreline}`
+                    : hoverPt.opponents}
+                </p>
+              ) : null}
             </div>
-          );
-        })()}
+          )}
+        </div>
+
+        <aside className="shrink-0 border-t border-[var(--border)]">
+          <div className="px-3 py-2 sm:px-4">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+              Now
+            </p>
+            <ul className="mt-1.5 grid grid-cols-1 gap-0.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {ranked.map((s) => {
+                const color = colorFor(s.playerId, orderedIds);
+                const last = s.points[s.points.length - 1];
+                const rank = rankOf.get(s.playerId) ?? 0;
+                const on = selected.includes(s.playerId);
+                const lit = hover?.playerId === s.playerId;
+                return (
+                  <li key={s.playerId}>
+                    <button
+                      type="button"
+                      onClick={() => onTogglePlayer(s.playerId)}
+                      onMouseEnter={() => {
+                        const gameIdx = [...s.points]
+                          .map((p, i) => ({ p, i }))
+                          .reverse()
+                          .find((x) => !x.p.held)?.i;
+                        const i =
+                          gameIdx ?? Math.max(0, s.points.length - 1);
+                        const pt = s.points[i];
+                        setHover({
+                          playerId: s.playerId,
+                          i,
+                          x: xAt(pt.matchIndex),
+                          y: yAt(pt.elo),
+                        });
+                      }}
+                      onMouseLeave={() => setHover(null)}
+                      className="flex w-full items-baseline gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[var(--field-bg)]"
+                      style={{
+                        background: lit ? `${color}18` : undefined,
+                        opacity: on ? 1 : 0.45,
+                      }}
+                      title="Click to show/hide on chart"
+                    >
+                      <span
+                        className="w-6 shrink-0 font-mono text-xs tabular-nums"
+                        style={{ color }}
+                      >
+                        #{rank}
+                      </span>
+                      <span
+                        className="min-w-0 flex-1 truncate text-sm font-semibold"
+                        style={{ color }}
+                      >
+                        {s.nickname}
+                      </span>
+                      <span
+                        className="shrink-0 font-mono text-sm tabular-nums"
+                        style={{ color }}
+                      >
+                        {last.elo}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </aside>
     </div>
   );
 }

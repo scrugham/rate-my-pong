@@ -14,8 +14,8 @@ import type { EloSnapshot, Player } from "@/lib/types";
 
 type Board = "main" | "singles" | "doubles";
 
-const FLASH_MS = 2000;
-const SLIDE_MS = 750;
+const FLASH_MS = 3200;
+const SLIDE_MS = 1800;
 
 function gamesOnBoard(player: Player, board: Board): number {
   if (board === "singles") return player.singlesWins + player.singlesLosses;
