@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { DataLoading } from "@/components/DataLoading";
 import { FilterBar, type FilterBarState } from "@/components/FilterBar";
 import { filterGames, sideLabel } from "@/lib/filters";
 import { formatDelta, formatScoreline } from "@/lib/format";
@@ -12,6 +13,7 @@ export function HistoryView() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [games, setGames] = useState<Game[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
   const [sort, setSort] = useState<SortMode>("newest");
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [filters, setFilters] = useState<FilterBarState>({
@@ -29,7 +31,8 @@ export function HistoryView() {
         setPlayers(pd.players ?? []);
         setGames(gd.games ?? []);
       })
-      .catch(() => setError("Could not load history."));
+      .catch(() => setError("Could not load history."))
+      .finally(() => setReady(true));
   }, []);
 
   const byId = useMemo(
@@ -61,6 +64,7 @@ export function HistoryView() {
   }
 
   if (error) return <p className="text-sm text-[var(--danger)]">{error}</p>;
+  if (!ready) return <DataLoading />;
 
   return (
     <div className="space-y-4">

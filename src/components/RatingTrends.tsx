@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { DataLoading } from "@/components/DataLoading";
 import { RatingChart } from "@/components/RatingChart";
 import type { Game, Player } from "@/lib/types";
 
@@ -8,6 +9,7 @@ export function RatingTrends() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [games, setGames] = useState<Game[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     Promise.all([fetch("/api/players"), fetch("/api/games")])
@@ -17,10 +19,12 @@ export function RatingTrends() {
         setPlayers(pd.players ?? []);
         setGames(gd.games ?? []);
       })
-      .catch(() => setError("Could not load trends."));
+      .catch(() => setError("Could not load trends."))
+      .finally(() => setReady(true));
   }, []);
 
   if (error) return <p className="text-sm text-[var(--danger)]">{error}</p>;
+  if (!ready) return <DataLoading />;
 
   return (
     <div className="space-y-4">

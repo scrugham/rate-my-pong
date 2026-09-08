@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { DataLoading } from "@/components/DataLoading";
 import { FilterBar, type FilterBarState } from "@/components/FilterBar";
 import { MinGamesSlider } from "@/components/MinGamesSlider";
 import { RatingChart } from "@/components/RatingChart";
@@ -43,6 +44,7 @@ export function AnalyticsView() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [games, setGames] = useState<Game[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
   const [tab, setTab] = useState<Tab>("overview");
   const [minGames, setMinGames] = useState(1);
   const [playerSort, setPlayerSort] = useState<PlayerSort>("eloDelta");
@@ -61,7 +63,8 @@ export function AnalyticsView() {
         setPlayers(pd.players ?? []);
         setGames(gd.games ?? []);
       })
-      .catch(() => setError("Could not load stats."));
+      .catch(() => setError("Could not load stats."))
+      .finally(() => setReady(true));
   }, []);
 
   const filteredGames = useMemo(
@@ -98,9 +101,7 @@ export function AnalyticsView() {
   }, [data.playerStats, minGames, playerSort]);
 
   if (error) return <p className="text-sm text-[var(--danger)]">{error}</p>;
-  if (!games.length && !players.length) {
-    return <p className="text-sm text-[var(--muted)]">Loading...</p>;
-  }
+  if (!ready) return <DataLoading />;
 
   const maxMarginCount = Math.max(...data.scoreMargins.map((m) => m.count), 1);
 

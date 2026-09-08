@@ -38,6 +38,7 @@ export function LogMatchForm() {
   const [writeAllowed, setWriteAllowed] = useState<boolean | null>(null);
   const [resultPills, setResultPills] = useState<EloPill[] | null>(null);
   const [resultLeaving, setResultLeaving] = useState(false);
+  const [rosterReadyLoad, setRosterReadyLoad] = useState(false);
   const router = useRouter();
   const reduceMotion = usePrefersReducedMotion();
 
@@ -48,7 +49,9 @@ export function LogMatchForm() {
   }
 
   useEffect(() => {
-    loadPlayers().catch(() => setError("Could not load roster."));
+    loadPlayers()
+      .catch(() => setError("Could not load roster."))
+      .finally(() => setRosterReadyLoad(true));
   }, []);
 
   useEffect(() => {
@@ -347,13 +350,19 @@ export function LogMatchForm() {
           </>
         )}
 
-        {players.length === 0 && (
+        {rosterReadyLoad && players.length === 0 && (
           <p className="form-hint">
             No players yet.{" "}
             <Link href="/join" className="text-[var(--cyan)] underline">
               Add a player
             </Link>
             .
+          </p>
+        )}
+
+        {!rosterReadyLoad && (
+          <p className="form-hint" role="status" aria-live="polite">
+            Loading roster…
           </p>
         )}
 

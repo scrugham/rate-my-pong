@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { DataLoading } from "@/components/DataLoading";
 import { MinGamesSlider } from "@/components/MinGamesSlider";
 import {
   displayName,
@@ -66,6 +67,7 @@ export function LeaderboardView() {
   const [board, setBoard] = useState<Board>("main");
   const [minGames, setMinGames] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
 
   const reduceMotion = usePrefersReducedMotion();
   const rowRefs = useRef(new Map<string, HTMLLIElement>());
@@ -88,6 +90,8 @@ export function LeaderboardView() {
         setDeltas(map);
       } catch {
         setError("Could not load leaderboard.");
+      } finally {
+        setReady(true);
       }
     }
     load();
@@ -208,6 +212,9 @@ export function LeaderboardView() {
       : board === "singles"
         ? "Ranked by singles win %. Elo is shown for context only."
         : "Ranked by doubles win %. Elo is shown for context only.";
+
+  if (error) return <p className="text-sm text-[var(--danger)]">{error}</p>;
+  if (!ready) return <DataLoading />;
 
   return (
     <div className="space-y-5">
