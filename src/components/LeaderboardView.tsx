@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { DataLoading } from "@/components/DataLoading";
 import { MinGamesSlider } from "@/components/MinGamesSlider";
 import {
@@ -289,7 +290,12 @@ export function LeaderboardView() {
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-[var(--foreground)]">
-                  {displayName(p)}
+                  <Link
+                    href={`/player/${p.id}`}
+                    className="transition-colors hover:text-[var(--cyan)]"
+                  >
+                    {displayName(p)}
+                  </Link>
                 </p>
                 <p className="text-xs text-[var(--muted)]">
                   {board === "main" ? (

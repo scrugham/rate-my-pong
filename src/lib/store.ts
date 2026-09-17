@@ -6,8 +6,10 @@ import {
   hasDatabaseUrl,
   pgGetDatabase,
   pgGetPlayersByIds,
+  pgInsertFeedback,
   pgInsertGame,
   pgInsertPlayer,
+  pgListFeedback,
   pgListGames,
   pgListPlayers,
   pgNicknameTaken,
@@ -15,9 +17,11 @@ import {
 } from "./postgres";
 import { createSeedDatabase } from "./seed";
 import type {
+  CreateFeedbackInput,
   CreateGameInput,
   CreatePlayerInput,
   Database,
+  Feedback,
   Game,
   Player,
 } from "./types";
@@ -242,4 +246,49 @@ export async function createGame(input: CreateGameInput): Promise<Game> {
   db.games.push(game);
   await writeFileDb(db);
   return game;
+}
+
+const FEEDBACK_MAX_LEN = 2000;
+
+export async function listFeedback(): Promise<Feedback[]> {
+  if (shouldUsePostgres()) return pgListFeedback();
+  const db = await ensureFileDb();
+  const items = db.feedback ?? [];
+  return [...items].sort(
+    (a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+}
+
+export async function createFeedback(
+  input: CreateFeedbackInput
+): Promise<Feedback> {
+  const message = input.message.trim();
+  if (!message) {
+    throw new Error("Message is required.");
+  }
+  if (message.length > FEEDBACK_MAX_LEN) {
+    throw new Error(`Message must be ${FEEDBACK_MAX_LEN} characters or fewer.`);
+  }
+
+  const nameRaw = input.name?.trim() ?? "";
+  const name = nameRaw ? nameRaw.slice(0, 64) : null;
+
+  const item: Feedback = {
+    id: randomUUID(),
+    message,
+    name,
+    createdAt: new Date().toISOString(),
+  };
+
+  if (shouldUsePostgres()) {
+    await pgInsertFeedback(item);
+    return item;
+  }
+
+  const db = await ensureFileDb();
+  if (!db.feedback) db.feedback = [];
+  db.feedback.push(item);
+  await writeFileDb(db);
+  return item;
 }

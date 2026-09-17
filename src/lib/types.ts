@@ -42,6 +42,19 @@ export interface Game {
 export interface Database {
   players: Player[];
   games: Game[];
+  feedback?: Feedback[];
+}
+
+export interface Feedback {
+  id: string;
+  message: string;
+  name: string | null;
+  createdAt: string;
+}
+
+export interface CreateFeedbackInput {
+  message: string;
+  name?: string | null;
 }
 
 export interface CreatePlayerInput {

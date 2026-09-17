@@ -1,5 +1,5 @@
 import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
-import type { Database, Game, Player } from "./types";
+import type { Database, Feedback, Game, Player } from "./types";
 
 let sqlClient: NeonQueryFunction<false, false> | null = null;
 let schemaReady: Promise<void> | null = null;
@@ -137,6 +137,18 @@ export async function ensurePostgresSchema(): Promise<void> {
       await db`
         CREATE INDEX IF NOT EXISTS games_played_at_idx ON games (played_at DESC)
       `;
+      await db`
+        CREATE TABLE IF NOT EXISTS feedback (
+          id TEXT PRIMARY KEY,
+          message TEXT NOT NULL,
+          name TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+      await db`
+        CREATE INDEX IF NOT EXISTS feedback_created_at_idx
+        ON feedback (created_at DESC)
+      `;
     })();
   }
   await schemaReady;
@@ -265,5 +277,42 @@ export async function pgInsertGame(game: Game): Promise<void> {
       ${game.teamEloA},
       ${game.teamEloB}
     )
+  `;
+}
+
+type FeedbackRow = {
+  id: string;
+  message: string;
+  name: string | null;
+  created_at: string;
+};
+
+function mapFeedback(row: FeedbackRow): Feedback {
+  return {
+    id: row.id,
+    message: row.message,
+    name: row.name,
+    createdAt:
+      typeof row.created_at === "string"
+        ? row.created_at
+        : new Date(row.created_at).toISOString(),
+  };
+}
+
+export async function pgListFeedback(): Promise<Feedback[]> {
+  await ensurePostgresSchema();
+  const db = sql();
+  const rows = (await db`
+    SELECT * FROM feedback ORDER BY created_at DESC
+  `) as FeedbackRow[];
+  return rows.map(mapFeedback);
+}
+
+export async function pgInsertFeedback(item: Feedback): Promise<void> {
+  await ensurePostgresSchema();
+  const db = sql();
+  await db`
+    INSERT INTO feedback (id, message, name, created_at)
+    VALUES (${item.id}, ${item.message}, ${item.name}, ${item.createdAt})
   `;
 }

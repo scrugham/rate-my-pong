@@ -147,5 +147,5 @@ export function createSeedDatabase(): Database {
     });
   }
 
-  return { players, games };
+  return { players, games, feedback: [] };
 }

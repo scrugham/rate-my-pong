@@ -54,6 +54,8 @@ export default function RootLayout({
             >
               github.com/scrugham
             </a>
+            {" · "}
+            <a href="/feedback">Feedback</a>
           </p>
         </footer>
       </body>

@@ -17,7 +17,7 @@ export default function AboutPage() {
         </div>
         <p className="max-w-sm text-sm leading-relaxed text-[var(--muted)]">
           One ELO per player. Singles and doubles both count. The number on
-          the board is a running total — each new match applies the math
+          the board is a running total. Each new match applies the math
           below.
         </p>
       </div>
@@ -43,7 +43,7 @@ export default function AboutPage() {
           </p>
           <p className="mt-2 text-xs leading-relaxed text-[var(--muted)]">
             Divide the gap by 400 first. Then raise 10 to that power. This is
-            expected win chance only — not the points that move.
+            expected win chance only, not the points that move.
           </p>
         </div>
       </div>
@@ -195,7 +195,7 @@ export default function AboutPage() {
           of the team’s floor. Two 1100s are still 1100. A 1400 with an 800
           is 1010, so two 1100s are correctly treated as favorites. Once the
           team ratings exist, both partners on a side get the same match
-          outcome — the 65/35 split is only for scouting, not for splitting
+          outcome. The 65/35 split is only for scouting, not for splitting
           the points 65/35. Each partner still applies their own K to that
           outcome.
         </p>
@@ -215,7 +215,7 @@ export default function AboutPage() {
           2-point win. Autocorrelation is the FiveThirtyEight-style term
           2.5 / ((winner Elo − loser Elo) / 400 + 2.5), using those team
           ratings in doubles. If a big favorite wins big, the extra margin
-          is discounted — the system already expected a beating. If an
+          is discounted. The system already expected a beating. If an
           underdog wins, the same term is greater than 1, so the upset is
           worth more. That term is not clipped again, so it can stretch the
           multiplier outside 0.82–1.18.

@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { DataLoading } from "@/components/DataLoading";
 import { FilterBar, type FilterBarState } from "@/components/FilterBar";
 import { MinGamesSlider } from "@/components/MinGamesSlider";
+import { PlayerPicker } from "@/components/PlayerPicker";
 import { RatingChart } from "@/components/RatingChart";
 import { exploreGames } from "@/lib/explore";
 import { filterGames } from "@/lib/filters";
@@ -13,6 +16,15 @@ import {
   formatScoreline,
 } from "@/lib/format";
 import type { Game, Player } from "@/lib/types";
+
+/** Rivalry keys are `sideASorted__sideBSorted` with `+` joining teammates. */
+function rivalryProfileHref(key: string): string | null {
+  const parts = key.split("__");
+  if (parts.length !== 2) return null;
+  const [a, b] = parts;
+  if (!a || !b || a.includes("+") || b.includes("+")) return null;
+  return `/player/${a}?vs=${encodeURIComponent(b)}`;
+}
 
 type Tab = "overview" | "ratings" | "players" | "rivalries" | "upsets";
 type PlayerSort =
@@ -41,6 +53,7 @@ function Stat({
 }
 
 export function AnalyticsView() {
+  const router = useRouter();
   const [players, setPlayers] = useState<Player[]>([]);
   const [games, setGames] = useState<Game[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +61,7 @@ export function AnalyticsView() {
   const [tab, setTab] = useState<Tab>("overview");
   const [minGames, setMinGames] = useState(1);
   const [playerSort, setPlayerSort] = useState<PlayerSort>("eloDelta");
+  const [analyzeId, setAnalyzeId] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterBarState>({
     format: "all",
     playerId: null,
@@ -107,6 +121,27 @@ export function AnalyticsView() {
 
   return (
     <div className="space-y-5">
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--field-bg)] p-3 sm:p-4">
+        <div className="max-w-sm">
+          <PlayerPicker
+            label="Analyze a player"
+            players={players}
+            value={analyzeId}
+            onChange={(id) => {
+              setAnalyzeId(id);
+              if (id) router.push(`/player/${id}`);
+            }}
+            allowClear
+            clearLabel="Pick someone"
+            placeholder="Open their profile"
+          />
+        </div>
+        <p className="mt-2 text-xs text-[var(--muted)]">
+          Career stats, rating chart, and head-to-head compare on a shareable
+          page.
+        </p>
+      </div>
+
       <FilterBar
         players={players}
         value={filters}
@@ -284,7 +319,12 @@ export function AnalyticsView() {
                     className="border-b border-[var(--border)] last:border-0"
                   >
                     <td className="py-2.5 pr-3 font-medium text-[var(--foreground)]">
-                      {displayName(row.player)}
+                      <Link
+                        href={`/player/${row.player.id}`}
+                        className="transition-colors hover:text-[var(--cyan)]"
+                      >
+                        {displayName(row.player)}
+                      </Link>
                     </td>
                     <td className="py-2.5 pr-3 text-[var(--muted)]">{row.games}</td>
                     <td className="py-2.5 pr-3 text-[var(--muted)]">
@@ -332,24 +372,41 @@ export function AnalyticsView() {
             Matchups with 2+ games in the current filter.
           </p>
           <ul className="divide-y divide-[var(--border)]">
-            {data.rivalries.map((r) => (
-              <li
-                key={r.key}
-                className="flex flex-wrap items-baseline justify-between gap-2 py-3"
-              >
-                <span className="text-sm font-medium text-[var(--foreground)]">{r.label}</span>
-                <span className="text-sm text-[var(--muted)]">
-                  {r.games} games · {r.aWins}-{r.bWins}
-                  {r.games > 0 && (
-                    <>
-                      {" "}
-                      · {Math.round((Math.max(r.aWins, r.bWins) / r.games) * 100)}%
-                      top side
-                    </>
+            {data.rivalries.map((r) => {
+              const href = rivalryProfileHref(r.key);
+              return (
+                <li
+                  key={r.key}
+                  className="flex flex-wrap items-baseline justify-between gap-2 py-3"
+                >
+                  {href ? (
+                    <Link
+                      href={href}
+                      className="text-sm font-medium text-[var(--foreground)] transition-colors hover:text-[var(--cyan)]"
+                    >
+                      {r.label}
+                    </Link>
+                  ) : (
+                    <span className="text-sm font-medium text-[var(--foreground)]">
+                      {r.label}
+                    </span>
                   )}
-                </span>
-              </li>
-            ))}
+                  <span className="text-sm text-[var(--muted)]">
+                    {r.games} games · {r.aWins}-{r.bWins}
+                    {r.games > 0 && (
+                      <>
+                        {" "}
+                        ·{" "}
+                        {Math.round(
+                          (Math.max(r.aWins, r.bWins) / r.games) * 100
+                        )}
+                        % top side
+                      </>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
             {data.rivalries.length === 0 && (
               <li className="py-8 text-center text-sm text-[var(--muted)]">
                 No repeat matchups in this filter.
