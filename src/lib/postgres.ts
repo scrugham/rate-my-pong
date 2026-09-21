@@ -280,6 +280,32 @@ export async function pgInsertGame(game: Game): Promise<void> {
   `;
 }
 
+export async function pgUpdateGame(game: Game): Promise<void> {
+  await ensurePostgresSchema();
+  const db = sql();
+  await db`
+    UPDATE games SET
+      format = ${game.format},
+      side_a = ${game.sideA},
+      side_b = ${game.sideB},
+      score_a = ${game.scoreA},
+      score_b = ${game.scoreB},
+      winner = ${game.winner},
+      went_to_deuce = ${game.wentToDeuce},
+      played_at = ${game.playedAt},
+      elo_changes = ${JSON.parse(JSON.stringify(game.eloChanges))},
+      team_elo_a = ${game.teamEloA},
+      team_elo_b = ${game.teamEloB}
+    WHERE id = ${game.id}
+  `;
+}
+
+export async function pgDeleteGame(id: string): Promise<void> {
+  await ensurePostgresSchema();
+  const db = sql();
+  await db`DELETE FROM games WHERE id = ${id}`;
+}
+
 type FeedbackRow = {
   id: string;
   message: string;

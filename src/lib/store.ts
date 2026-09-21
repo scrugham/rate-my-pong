@@ -4,6 +4,7 @@ import path from "path";
 import { applyMatchElo, assertValidSides, STARTING_ELO } from "./elo";
 import {
   hasDatabaseUrl,
+  pgDeleteGame,
   pgGetDatabase,
   pgGetPlayersByIds,
   pgInsertFeedback,
@@ -13,9 +14,20 @@ import {
   pgListGames,
   pgListPlayers,
   pgNicknameTaken,
+  pgUpdateGame,
   pgUpdatePlayer,
 } from "./postgres";
+import {
+  hybridReplayFromGame,
+  refreshDerivedStats,
+  reverseGameSnapshots,
+} from "./rating-rebuild";
 import { createSeedDatabase } from "./seed";
+import {
+  previewUndoSession,
+  resolveUndoSelection,
+  type UndoSessionPreview,
+} from "./undo-session";
 import type {
   CreateFeedbackInput,
   CreateGameInput,
@@ -246,6 +258,134 @@ export async function createGame(input: CreateGameInput): Promise<Game> {
   db.games.push(game);
   await writeFileDb(db);
   return game;
+}
+
+export async function getUndoSessionPreview(): Promise<UndoSessionPreview | null> {
+  const [games, players] = await Promise.all([listGames(), listPlayers()]);
+  return previewUndoSession(games, players);
+}
+
+export async function undoRecentGames(gameIds: string[]): Promise<{
+  undone: Game[];
+  preview: UndoSessionPreview | null;
+}> {
+  const ids = gameIds.map(String);
+  const games = await listGames();
+  const toUndo = resolveUndoSelection(games, ids);
+
+  if (shouldUsePostgres()) {
+    const players = await pgListPlayers();
+    const byId = new Map(players.map((p) => [p.id, { ...p }]));
+    const affected = new Set<string>();
+
+    for (const game of toUndo) {
+      for (const id of [...game.sideA, ...game.sideB]) affected.add(id);
+      reverseGameSnapshots(game, byId);
+      await pgDeleteGame(game.id);
+    }
+
+    const remaining = games.filter((g) => !toUndo.some((u) => u.id === g.id));
+    refreshDerivedStats([...affected], byId, remaining);
+
+    for (const id of affected) {
+      const p = byId.get(id);
+      if (p) await pgUpdatePlayer(p);
+    }
+
+    const preview = previewUndoSession(remaining, [...byId.values()]);
+    return { undone: toUndo, preview };
+  }
+
+  const db = await ensureFileDb();
+  const byId = new Map(db.players.map((p) => [p.id, p]));
+  const affected = new Set<string>();
+  const undoIds = new Set(toUndo.map((g) => g.id));
+
+  for (const game of toUndo) {
+    for (const id of [...game.sideA, ...game.sideB]) affected.add(id);
+    reverseGameSnapshots(game, byId);
+  }
+
+  db.games = db.games.filter((g) => !undoIds.has(g.id));
+  refreshDerivedStats([...affected], byId, db.games);
+  db.players = [...byId.values()];
+  await writeFileDb(db);
+
+  const preview = previewUndoSession(db.games, db.players);
+  return { undone: toUndo, preview };
+}
+
+/**
+ * Correct one logged game (sides/score) and hybrid-rebuild from that point.
+ * Pre-game history keeps stored Elo deltas. From the edit onward, games that
+ * touch the seed players (and anyone they cascade into) are recomputed.
+ */
+export async function repairGameHybrid(options: {
+  gameId: string;
+  sideA: string[];
+  sideB: string[];
+  scoreA: number | null;
+  scoreB: number | null;
+  winner: "A" | "B";
+  wentToDeuce?: boolean;
+  seedTouched?: string[];
+}): Promise<{ recomputedGameIds: string[]; game: Game }> {
+  const db = shouldUsePostgres()
+    ? await pgGetDatabase()
+    : await ensureFileDb();
+
+  const target = db.games.find((g) => g.id === options.gameId);
+  if (!target) throw new Error(`Game ${options.gameId} not found.`);
+
+  const seedTouched = options.seedTouched?.length
+    ? options.seedTouched
+    : [...new Set([...target.sideA, ...target.sideB, ...options.sideA, ...options.sideB])];
+
+  const { players, games, recomputedGameIds } = hybridReplayFromGame({
+    players: db.players,
+    games: db.games,
+    fromGameId: options.gameId,
+    seedTouched,
+    patchFromGame: (game) => {
+      game.sideA = [...options.sideA];
+      game.sideB = [...options.sideB];
+      game.scoreA = options.scoreA;
+      game.scoreB = options.scoreB;
+      game.winner = options.winner;
+      game.wentToDeuce =
+        options.wentToDeuce ??
+        (options.scoreA !== null &&
+          options.scoreB !== null &&
+          Math.min(options.scoreA, options.scoreB) >= 10 &&
+          Math.abs(options.scoreA - options.scoreB) === 2);
+    },
+  });
+
+  const byIdBefore = new Map(db.games.map((g) => [g.id, g]));
+  const changedGames = games.filter((g) => {
+    const prev = byIdBefore.get(g.id);
+    if (!prev) return true;
+    return (
+      recomputedGameIds.includes(g.id) ||
+      prev.sideA.join() !== g.sideA.join() ||
+      prev.sideB.join() !== g.sideB.join() ||
+      prev.scoreA !== g.scoreA ||
+      prev.scoreB !== g.scoreB ||
+      prev.winner !== g.winner
+    );
+  });
+
+  if (shouldUsePostgres()) {
+    for (const p of players) await pgUpdatePlayer(p);
+    for (const g of changedGames) await pgUpdateGame(g);
+  } else {
+    db.players = players;
+    db.games = games;
+    await writeFileDb(db);
+  }
+
+  const game = games.find((g) => g.id === options.gameId)!;
+  return { recomputedGameIds, game };
 }
 
 const FEEDBACK_MAX_LEN = 2000;

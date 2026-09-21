@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PlayerPicker } from "@/components/PlayerPicker";
 import { SeriesGameRowEditor } from "@/components/SeriesGameRowEditor";
+import { UndoSessionPanel } from "@/components/UndoSessionPanel";
 import { saveLastResult } from "@/lib/last-result";
 import {
   mergeEloChanges,
@@ -39,6 +40,7 @@ export function LogMatchForm() {
   const [resultPills, setResultPills] = useState<EloPill[] | null>(null);
   const [resultLeaving, setResultLeaving] = useState(false);
   const [rosterReadyLoad, setRosterReadyLoad] = useState(false);
+  const [undoRefreshKey, setUndoRefreshKey] = useState(0);
   const router = useRouter();
   const reduceMotion = usePrefersReducedMotion();
 
@@ -190,6 +192,7 @@ export function LogMatchForm() {
       }
 
       saveLastResult(mergedChanges);
+      setUndoRefreshKey((k) => k + 1);
 
       const pills = pillsFromChanges(mergedChanges, players);
       if (pills.length === 0) {
@@ -225,6 +228,11 @@ export function LogMatchForm() {
 
   return (
     <>
+      <UndoSessionPanel
+        writeAllowed={writeAllowed}
+        refreshKey={undoRefreshKey}
+      />
+
       <form onSubmit={onSubmit} className="space-y-6">
         <div className="flex flex-wrap gap-2">
           {(["singles", "doubles"] as MatchFormat[]).map((f) => (
